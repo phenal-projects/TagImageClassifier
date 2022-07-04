@@ -1,0 +1,22 @@
+random_seed: 42
+data:
+  image_folder: "/home/ilyabushmakin/Documents/Projects/DataStorage/kaggle_personal/LargeRDataset"
+  image_metadata_db: "postgresql+psycopg2://ilbumi:aaaa@localhost/main"
+  minimal_tag_frequency: 50
+  image_size: 256
+  batch_size: 16
+  num_workers: 8
+model:
+  patch_size: 16
+  emb_size: 512
+  depth: 6
+  heads: 16
+  mlp_dim: 1024
+  dropout: 0.1
+  weight_decay: 0.0001
+  learning_rate: 0.0005
+  warmup_steps: 10
+training:
+  checkpoints_folder: "./"
+  gpus: 1
+  max_epochs: 80
