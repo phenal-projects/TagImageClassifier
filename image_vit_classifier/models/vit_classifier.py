@@ -103,7 +103,7 @@ class ImageClassifier(pl.LightningModule):
         outputs = self.all_gather(outputs)
         logits = (
             torch.cat([output["logits"] for output in outputs])
-            .cpu()
+            .detach().cpu()
             .numpy()
             .reshape(-1)
         )
@@ -123,6 +123,9 @@ class ImageClassifier(pl.LightningModule):
                 f"{stage}_target_balance",
                 torch.tensor(np.mean(targets), dtype=torch.float32),
             )
+
+    def set_embeddings(self, embeddings: torch.Tensor):
+        self.class_encoder = nn.Embedding.from_pretrained(embeddings)
 
     def training_step(self, batch, batch_idx):
         loss, _, logits = self.single_step(batch, "train")

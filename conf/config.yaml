@@ -4,7 +4,7 @@ data:
   image_metadata_db: "postgresql+psycopg2://ilbumi:aaaa@localhost/main"
   minimal_tag_frequency: 50
   image_size: 256
-  batch_size: 16
+  batch_size: 32
   num_workers: 8
 model:
   patch_size: 16
@@ -16,6 +16,7 @@ model:
   weight_decay: 0.0001
   learning_rate: 0.0005
   warmup_steps: 10
+  fasttext_model: "/home/ilyabushmakin/Documents/Projects/Playground/ExplicitWebCorpus/data/3_models/explicit_fasttext_window8_dim512.pkl"
 training:
   checkpoints_folder: "./"
   gpus: 1

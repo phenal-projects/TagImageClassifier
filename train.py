@@ -1,10 +1,13 @@
 import hydra
+import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
+import torch
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from torchvision import transforms
+from gensim.models import FastText
 
 from image_vit_classifier.data import TaggedImageFolderDataModule
 from image_vit_classifier.models import ImageClassifier
@@ -63,6 +66,7 @@ def main(cfg: DictConfig) -> None:
         ]
     )
 
+    # initialize data module
     data = TaggedImageFolderDataModule(
         cfg["data"]["image_folder"],
         cfg["data"]["image_metadata_db"],
@@ -75,6 +79,7 @@ def main(cfg: DictConfig) -> None:
     )
     data.setup()
 
+    # initialize the model
     model = ImageClassifier(
         image_size=cfg["data"]["image_size"],
         patch_size=cfg["model"]["patch_size"],
@@ -91,6 +96,13 @@ def main(cfg: DictConfig) -> None:
         warmup_steps=cfg["model"]["warmup_steps"],
         max_epochs=cfg["training"]["max_epochs"],
     )
+
+    # initialize initial tag embeddings
+    fasttext_model = FastText.load(cfg["model"]["fasttext_model"])
+    embeddings = torch.zeros((len(data.tag2idx), cfg["model"]["emb_size"]))
+    for tag, idx in data.tag2idx.items():
+        embeddings[idx] = torch.Tensor(fasttext_model.wv[tag])
+    model.set_embeddings(embeddings)
 
     trainer = pl.Trainer(
         default_root_dir=cfg["training"]["checkpoints_folder"],

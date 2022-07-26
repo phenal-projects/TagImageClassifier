@@ -35,7 +35,7 @@ class TaggedImageFolderDataModule(LightningDataModule):
         engine = create_engine(self.hparams.image_metadata_db)
         with engine.connect() as conn:
             df = pd.read_sql_query(
-                "SELECT DISTINCT href, filename, tags  FROM images_metadata", conn
+                "SELECT DISTINCT filename, tags  FROM images_metadata", conn
             )
 
         # read and split image paths
@@ -64,7 +64,7 @@ class TaggedImageFolderDataModule(LightningDataModule):
         test_set = set(test_set)
 
         # prepare tags
-        tags_frequencies = df.explode("tags").groupby("tags").count()["href"]
+        tags_frequencies = df.explode("tags").groupby("tags").count()["filename"]
         self.tag2idx = {
             k: i
             for i, k in enumerate(
