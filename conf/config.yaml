@@ -13,10 +13,11 @@ model:
   heads: 16
   mlp_dim: 1024
   dropout: 0.1
-  weight_decay: 0.0001
-  learning_rate: 0.0005
-  warmup_steps: 10
+  weight_decay: 0.0000
+  learning_rate: 0.0001
+  warmup_steps: 5
   fasttext_model: "/home/ilyabushmakin/Documents/Projects/Playground/ExplicitWebCorpus/data/3_models/explicit_fasttext_window8_dim512.pkl"
+  finetuning_start: "ilbumi/ViTClfR34/model-46zk5jsf:latest"
 training:
   checkpoints_folder: "./"
   gpus: 1

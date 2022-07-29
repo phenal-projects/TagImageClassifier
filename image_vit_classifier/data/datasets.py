@@ -1,7 +1,11 @@
 import os
 from typing import Union, Set, Dict, Any, Callable, Optional
+from collections import Counter
 from glob import glob
 from random import sample, randint
+
+import numpy as np
+from numpy.random import choice
 
 import torch
 from PIL import Image
@@ -24,6 +28,13 @@ class TaggedImages(Dataset):
         self.transform = transform
         self.views_per_image = views_per_image
 
+        self.tags_sampling_weights = {}
+        tags_count = Counter()
+        for tags in self.file2tags.values():
+            tags_count.update(tags)
+        for k, v in tags_count.items():
+            self.tags_sampling_weights[k] = 1/v
+
         self.images = sorted(
             [
                 path
@@ -42,12 +53,14 @@ class TaggedImages(Dataset):
         image = drop_alpha(image).convert("RGB")
         if self.transform:
             image = self.transform(image)
+
         # sample tags
         tags = self.file2tags[path]
-        if len(tags) > (self.views_per_image // 2):
-            pos_tags = sample(tags, self.views_per_image // 2)
-        else:
-            pos_tags = tags
+        pos_tags = []
+        if len(tags) > 0:
+            weights = np.array([self.tags_sampling_weights[tag] for tag in tags])
+            weights /= weights.sum()
+            pos_tags = list(choice(tags, self.views_per_image // 2, p=weights))
 
         neg_tags = [
             randint(0, self.max_tag_id)
