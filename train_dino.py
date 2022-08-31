@@ -1,16 +1,12 @@
 import hydra
-import numpy as np
-import pandas as pd
 import pytorch_lightning as pl
-import torch
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from torchvision import transforms
-from gensim.models import FastText
 
 from image_vit_classifier.data import TaggedImageFolderDataModule
-from image_vit_classifier.models import ImageClassifier
+from image_vit_classifier.models import LightningDino
 
 
 @hydra.main(config_path="conf", config_name="config")
@@ -78,8 +74,9 @@ def main(cfg: DictConfig) -> None:
         random_seed=cfg["random_seed"],
     )
     data.setup()
+
     # initialize the model
-    model = ImageClassifier(
+    model = LightningDino(
         image_size=cfg["data"]["image_size"],
         patch_size=cfg["model"]["patch_size"],
         num_classes=len(data.tag2idx),
@@ -103,17 +100,13 @@ def main(cfg: DictConfig) -> None:
         callbacks=[
             ModelCheckpoint(
                 save_weights_only=True,
-                mode="max",
-                monitor="val_acc",
-                save_top_k=4,
+                mode="min",
+                monitor="val_loss",
+                save_top_k=2,
             ),
             LearningRateMonitor("epoch"),
         ],
-        logger=WandbLogger(project="ViTClfR34", log_model="all"),
-    )
-
-    trainer.logger.log_text(
-        key="tag2idx", dataframe=pd.DataFrame.from_dict({"idx": data.tag2idx}).reset_index()
+        logger=WandbLogger(project="ViTClfR34_Dino", log_model="all"),
     )
     trainer.fit(model, data)
 

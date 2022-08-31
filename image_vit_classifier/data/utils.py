@@ -9,6 +9,3 @@ def drop_alpha(im, bg_colour=(255, 255, 255)):
         return bg
     else:
         return im
-
-
-

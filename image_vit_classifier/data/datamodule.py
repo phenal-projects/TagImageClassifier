@@ -8,6 +8,7 @@ from sqlalchemy import create_engine
 from pytorch_lightning import LightningDataModule
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
+import logging
 
 
 class TaggedImageFolderDataModule(LightningDataModule):
@@ -63,24 +64,11 @@ class TaggedImageFolderDataModule(LightningDataModule):
         val_set = set(val_set)
         test_set = set(test_set)
 
-        # prepare tags
-        tags_frequencies = df.explode("tags").groupby("tags").count()["filename"]
-        self.tag2idx = {
-            k: i
-            for i, k in enumerate(
-                sorted(
-                    [
-                        x
-                        for x in tags_frequencies.index
-                        if tags_frequencies[x] >= self.hparams.min_tag_freq
-                    ]
-                )
-            )
-        }
+        self.tag2idx = {tag: idx for idx, tag in enumerate(sorted(df.tags.explode().unique()))}
 
         df.index = df.filename
         self.file2tags = {
-            path: [self.tag2idx[tag] for tag in tags if tag in self.tag2idx]
+            path: [self.tag2idx[tag] for tag in tags]
             for path, tags in zip(
                 image_paths,
                 df.loc[
@@ -88,20 +76,24 @@ class TaggedImageFolderDataModule(LightningDataModule):
                 ],
             )
         }
+        logging.info("Tags extracted")
 
         self.train_dataset = TaggedImages(
             self.hparams.image_folder,
             {k: v for k, v in self.file2tags.items() if k in train_set},
+            len(self.tag2idx),
             self.hparams.train_image_transform,
         )
         self.val_dataset = TaggedImages(
             self.hparams.image_folder,
             {k: v for k, v in self.file2tags.items() if k in val_set},
+            len(self.tag2idx),
             self.hparams.val_image_transform,
         )
         self.test_dataset = TaggedImages(
             self.hparams.image_folder,
             {k: v for k, v in self.file2tags.items() if k in test_set},
+            len(self.tag2idx),
             self.hparams.val_image_transform,
         )
 

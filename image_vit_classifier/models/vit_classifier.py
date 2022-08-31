@@ -3,15 +3,13 @@ from typing import Tuple
 import numpy as np
 import pytorch_lightning as pl
 import torch
+import timm
 from sklearn.metrics import roc_auc_score, average_precision_score
 from torch import Tensor, LongTensor
-from torch import nn
 from torch.nn import functional as F
 from torch.optim import AdamW
 
 from transformers import get_linear_schedule_with_warmup
-from vit_pytorch.vit_for_small_dataset import ViT
-from vit_pytorch.extractor import Extractor
 
 
 class ImageClassifier(pl.LightningModule):
@@ -34,49 +32,25 @@ class ImageClassifier(pl.LightningModule):
     ):
         super().__init__()
         self.save_hyperparameters()
-        self.image_encoder = Extractor(
-            ViT(
-                image_size=image_size,
-                patch_size=patch_size,
-                num_classes=1,
-                dim=dim,
-                depth=depth,
-                heads=heads,
-                mlp_dim=mlp_dim,
-                dropout=dropout,
-                emb_dropout=emb_dropout,
-            )
+        self.model = timm.create_model(
+            "mobilevitv2_200_in22ft1k",
+            drop_rate=0.2,
+            pretrained=True,
+            num_classes=num_classes,
         )
-        self.class_encoder = nn.Embedding(num_embeddings=num_classes, embedding_dim=dim)
-        self.decoder = nn.MultiheadAttention(
-            embed_dim=dim,
-            num_heads=heads,
-            dropout=dropout,
-            batch_first=True,
-        )
-        self.linear = nn.Sequential(nn.Tanh(), nn.Linear(dim, 1))
 
-    def forward(self, images: Tensor, classes_idx: LongTensor) -> Tensor:
+    def forward(self, images: Tensor) -> Tensor:
         """
         :param images: a batch of images. Shape: (batch_size x 3 x image_size x image_size)
         :param classes_idx: ids of the classes to predict (1 if image belongs to a class).
                             Shape: (batch_size x classes_per_image)
         :return: probabilities for the image - class pairs. Shape: (batch_size x classes_per_image)
         """
-        # (batch_size x 3 x image_size x image_size) -> (batch_size x patches x emb_dim)
-        _, patches_embeddings = self.image_encoder(images)
-        # (batch_size x classes_per_image) -> (batch_size x classes_per_image x emb_size)
-        class_embeddings = self.class_encoder(classes_idx)
-        # (batch_size x classes_per_image x emb_size), (batch_size x patches x emb_dim)
-        # -> (batch_size x classes_per_image x emb_size)
-        image_embeddings, _ = self.decoder.forward(
-            query=class_embeddings, key=patches_embeddings, value=patches_embeddings
-        )
-        return self.linear(image_embeddings).squeeze(-1)
+        return self.model(images)
 
     def single_step(self, batch, stage: str = "train") -> Tuple[Tensor, Tensor, Tensor]:
-        images, classes_idx, y = batch
-        logits = self(images, classes_idx)
+        images, y = batch
+        logits = self(images)
         loss = F.binary_cross_entropy_with_logits(logits, y)
         # loss
         self.log(
@@ -103,18 +77,24 @@ class ImageClassifier(pl.LightningModule):
         outputs = self.all_gather(outputs)
         logits = (
             torch.cat([output["logits"] for output in outputs])
-            .detach().cpu()
+            .detach()
+            .cpu()
             .numpy()
             .reshape(-1)
         )
-        targets = torch.cat([output["targets"] for output in outputs]).cpu().numpy().reshape(-1)
+        targets = (
+            torch.cat([output["targets"] for output in outputs])
+            .cpu()
+            .numpy()
+            .reshape(-1)
+        )
         if len(np.unique(targets)) != 1:
             self.log(
                 f"{stage}_roc_auc",
                 torch.tensor(roc_auc_score(targets, logits), dtype=torch.float32),
             )
             self.log(
-                f"{stage}_roc_auc",
+                f"{stage}_average_precision",
                 torch.tensor(
                     average_precision_score(targets, logits), dtype=torch.float32
                 ),
@@ -124,20 +104,17 @@ class ImageClassifier(pl.LightningModule):
                 torch.tensor(np.mean(targets), dtype=torch.float32),
             )
 
-    def set_embeddings(self, embeddings: torch.Tensor):
-        self.class_encoder = nn.Embedding.from_pretrained(embeddings)
-
     def training_step(self, batch, batch_idx):
         loss, _, logits = self.single_step(batch, "train")
-        return {"loss": loss, "logits": logits, "targets": batch[2]}
+        return {"loss": loss, "logits": logits, "targets": batch[-1]}
 
     def validation_step(self, batch, batch_idx):
         loss, _, logits = self.single_step(batch, "val")
-        return {"logits": logits, "targets": batch[2]}
+        return {"logits": logits, "targets": batch[-1]}
 
     def test_step(self, batch, batch_idx):
         loss, _, logits = self.single_step(batch, "test")
-        return {"logits": logits, "targets": batch[2]}
+        return {"logits": logits, "targets": batch[-1]}
 
     def training_epoch_end(self, outputs) -> None:
         self.epoch_end(outputs, "train")
