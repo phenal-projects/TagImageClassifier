@@ -102,7 +102,6 @@ class TaggedImageFolderDataModule(LightningDataModule):
             self.train_dataset,
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
-            prefetch_factor=self.hparams.prefetch_factor,
             shuffle=True,
         )
 
@@ -111,7 +110,6 @@ class TaggedImageFolderDataModule(LightningDataModule):
             self.val_dataset,
             batch_size=self.hparams.batch_size,
             num_workers=self.hparams.num_workers,
-            prefetch_factor=self.hparams.prefetch_factor,
         )
 
     def test_dataloader(self) -> DataLoader:

@@ -33,7 +33,7 @@ class ImageClassifier(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.model = timm.create_model(
-            "mobilevitv2_200_in22ft1k",
+            "deit3_small_patch16_224_in21ft1k",
             drop_rate=0.2,
             pretrained=True,
             num_classes=num_classes,
@@ -42,9 +42,7 @@ class ImageClassifier(pl.LightningModule):
     def forward(self, images: Tensor) -> Tensor:
         """
         :param images: a batch of images. Shape: (batch_size x 3 x image_size x image_size)
-        :param classes_idx: ids of the classes to predict (1 if image belongs to a class).
-                            Shape: (batch_size x classes_per_image)
-        :return: probabilities for the image - class pairs. Shape: (batch_size x classes_per_image)
+        :return: probabilities for the image classes. Shape: (batch_size x classes_per_image)
         """
         return self.model(images)
 
@@ -126,27 +124,8 @@ class ImageClassifier(pl.LightningModule):
         self.epoch_end(outputs, "test")
 
     def configure_optimizers(self):
-        no_decay = ["bias", "LayerNorm.weight"]
-        optimizer_grouped_parameters = [
-            {
-                "params": [
-                    p
-                    for n, p in self.named_parameters()
-                    if not any(nd in n for nd in no_decay)
-                ],
-                "weight_decay": self.hparams.weight_decay,
-            },
-            {
-                "params": [
-                    p
-                    for n, p in self.named_parameters()
-                    if any(nd in n for nd in no_decay)
-                ],
-                "weight_decay": 0.0,
-            },
-        ]
         optimizer = AdamW(
-            optimizer_grouped_parameters,
+            self.parameters(),
             lr=self.hparams.learning_rate,
             eps=self.hparams.adam_epsilon,
         )

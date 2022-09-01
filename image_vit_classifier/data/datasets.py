@@ -44,7 +44,7 @@ class TaggedImages(Dataset):
 
         # sample tags
         tag_indices = self.file2tags[path]
-        ys = torch.zeros((self.num_tags, ))
+        ys = torch.zeros((self.num_tags, ), dtype=torch.float32)
         for tag_idx in tag_indices:
             ys[tag_idx] = 1.0
 

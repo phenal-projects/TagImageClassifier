@@ -3,9 +3,9 @@ data:
   image_folder: "/home/ilyabushmakin/Documents/Projects/DataStorage/kaggle_personal/LargeRDataset"
   image_metadata_db: "postgresql+psycopg2://ilbumi:aaaa@localhost/main"
   minimal_tag_frequency: 50
-  image_size: 256
+  image_size: 224
   batch_size: 8
-  num_workers: 8 
+  num_workers: 0
 model:
   patch_size: 16
   emb_size: 512

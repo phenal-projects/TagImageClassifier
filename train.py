@@ -1,13 +1,10 @@
 import hydra
-import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
-import torch
 from omegaconf import DictConfig
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from torchvision import transforms
-from gensim.models import FastText
 
 from image_vit_classifier.data import TaggedImageFolderDataModule
 from image_vit_classifier.models import ImageClassifier
@@ -72,7 +69,6 @@ def main(cfg: DictConfig) -> None:
         cfg["data"]["image_metadata_db"],
         train_image_transform=train_transform,
         val_image_transform=val_transform,
-        min_tag_freq=cfg["data"]["minimal_tag_frequency"],
         batch_size=cfg["data"]["batch_size"],
         num_workers=cfg["data"]["num_workers"],
         random_seed=cfg["random_seed"],
@@ -104,7 +100,7 @@ def main(cfg: DictConfig) -> None:
             ModelCheckpoint(
                 save_weights_only=True,
                 mode="max",
-                monitor="val_acc",
+                monitor="val_roc_auc",
                 save_top_k=4,
             ),
             LearningRateMonitor("epoch"),
@@ -115,7 +111,7 @@ def main(cfg: DictConfig) -> None:
     trainer.logger.log_text(
         key="tag2idx", dataframe=pd.DataFrame.from_dict({"idx": data.tag2idx}).reset_index()
     )
-    trainer.fit(model, data)
+    trainer.fit(model, datamodule=data)
 
 
 if __name__ == "__main__":
