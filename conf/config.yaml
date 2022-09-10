@@ -2,23 +2,17 @@ random_seed: 42
 data:
   image_folder: "/home/ilyabushmakin/Documents/Projects/DataStorage/kaggle_personal/LargeRDataset"
   image_metadata_db: "postgresql+psycopg2://ilbumi:aaaa@localhost/main"
-  minimal_tag_frequency: 50
   image_size: 224
-  batch_size: 8
-  num_workers: 0
+  batch_size: 32
+  num_workers: 12
 model:
-  patch_size: 16
-  emb_size: 512
-  depth: 6
-  heads: 16
-  mlp_dim: 1024
+  model_name: "swsl_resnext50_32x4d"
   dropout: 0.1
   weight_decay: 0.0000
-  learning_rate: 0.00005
-  warmup_steps: 8
-  fasttext_model: "/home/ilyabushmakin/Documents/Projects/Playground/ExplicitWebCorpus/data/3_models/explicit_fasttext_window8_dim512.pkl"
+  learning_rate: 0.1
+  warmup_steps: 1
   finetuning_start: "ilbumi/ViTClfR34/model-46zk5jsf:latest"
 training:
   checkpoints_folder: "./"
   gpus: 1
-  max_epochs: 80
+  max_epochs: 200

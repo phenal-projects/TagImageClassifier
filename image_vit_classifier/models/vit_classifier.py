@@ -4,26 +4,21 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 import timm
+from pytorch_lightning.loggers.base import DummyLogger
 from sklearn.metrics import roc_auc_score, average_precision_score
 from torch import Tensor, LongTensor
 from torch.nn import functional as F
 from torch.optim import AdamW
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-from transformers import get_linear_schedule_with_warmup
 
 
 class ImageClassifier(pl.LightningModule):
     def __init__(
         self,
-        image_size: int = 256,
-        patch_size: int = 16,
+        model_name: str = "deit3_small_patch16_224_in21ft1k",
         num_classes: int = 1000,
-        dim: int = 1024,
-        depth: int = 6,
-        heads: int = 16,
-        mlp_dim: int = 2048,
         dropout: float = 0.1,
-        emb_dropout: float = 0.1,
         weight_decay: float = 1e-4,
         learning_rate: float = 0.001,
         adam_epsilon: float = 1e-8,
@@ -33,8 +28,8 @@ class ImageClassifier(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.model = timm.create_model(
-            "deit3_small_patch16_224_in21ft1k",
-            drop_rate=0.2,
+            model_name,
+            drop_rate=dropout,
             pretrained=True,
             num_classes=num_classes,
         )
@@ -47,9 +42,9 @@ class ImageClassifier(pl.LightningModule):
         return self.model(images)
 
     def single_step(self, batch, stage: str = "train") -> Tuple[Tensor, Tensor, Tensor]:
-        images, y = batch
+        images, y, pos_weight = batch
         logits = self(images)
-        loss = F.binary_cross_entropy_with_logits(logits, y)
+        loss = F.binary_cross_entropy_with_logits(logits, y, pos_weight=pos_weight[0])
         # loss
         self.log(
             f"{stage}_loss",
@@ -74,37 +69,34 @@ class ImageClassifier(pl.LightningModule):
     def epoch_end(self, outputs, stage: str = "train"):
         outputs = self.all_gather(outputs)
         logits = (
-            torch.cat([output["logits"] for output in outputs])
-            .detach()
-            .cpu()
-            .numpy()
-            .reshape(-1)
+            torch.cat([output["logits"] for output in outputs]).detach().cpu().numpy()
         )
-        targets = (
-            torch.cat([output["targets"] for output in outputs])
-            .cpu()
-            .numpy()
-            .reshape(-1)
+        targets_matrix = (
+            torch.cat([output["targets"] for output in outputs]).cpu().numpy()
         )
-        if len(np.unique(targets)) != 1:
-            self.log(
-                f"{stage}_roc_auc",
-                torch.tensor(roc_auc_score(targets, logits), dtype=torch.float32),
-            )
-            self.log(
-                f"{stage}_average_precision",
-                torch.tensor(
-                    average_precision_score(targets, logits), dtype=torch.float32
-                ),
-            )
-            self.log(
-                f"{stage}_target_balance",
-                torch.tensor(np.mean(targets), dtype=torch.float32),
+        scores_data = []
+        if not isinstance(self.logger, DummyLogger):
+            for i in range(targets_matrix.shape[1]):
+                targets = targets_matrix[:, i]
+                if len(np.unique(targets)) != 1:
+                    scores_data.append(
+                        (
+                            i,
+                            roc_auc_score(targets, logits[:, i]),
+                            average_precision_score(targets, logits[:, i]),
+                            np.mean(targets),
+                        )
+                    )
+
+            self.logger.log_table(
+                key=f"scores_{stage}",
+                columns=["tag_idx", "roc_auc", "average_precision", "balance"],
+                data=scores_data,
             )
 
     def training_step(self, batch, batch_idx):
         loss, _, logits = self.single_step(batch, "train")
-        return {"loss": loss, "logits": logits, "targets": batch[-1]}
+        return {"loss": loss}
 
     def validation_step(self, batch, batch_idx):
         loss, _, logits = self.single_step(batch, "val")
@@ -114,14 +106,22 @@ class ImageClassifier(pl.LightningModule):
         loss, _, logits = self.single_step(batch, "test")
         return {"logits": logits, "targets": batch[-1]}
 
-    def training_epoch_end(self, outputs) -> None:
-        self.epoch_end(outputs, "train")
-
     def validation_epoch_end(self, outputs) -> None:
         self.epoch_end(outputs, "val")
 
     def test_epoch_end(self, outputs) -> None:
         self.epoch_end(outputs, "test")
+
+    def freeze_pretrained(self):
+        for name, param in self.model.named_parameters():
+            if "fc." in name:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
+
+    def unfreeze_all(self):
+        for name, param in self.model.named_parameters():
+            param.requires_grad = True
 
     def configure_optimizers(self):
         optimizer = AdamW(
@@ -129,10 +129,21 @@ class ImageClassifier(pl.LightningModule):
             lr=self.hparams.learning_rate,
             eps=self.hparams.adam_epsilon,
         )
-        scheduler = get_linear_schedule_with_warmup(
+        scheduler = ReduceLROnPlateau(
             optimizer,
-            num_warmup_steps=self.hparams.warmup_steps,
-            num_training_steps=self.hparams.max_epochs,
+            mode="min",
+            factor=0.3,
+            patience=2,
+            cooldown=2,
+            threshold=1e-4,
+            min_lr=1e-8,
         )
-        scheduler.step()  # skip 0 lr epoch
-        return [optimizer], [scheduler]
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "train_loss_epoch",
+                "interval": "epoch",
+                "frequency": 1,
+            },
+        }

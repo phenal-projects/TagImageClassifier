@@ -1,5 +1,5 @@
 import os
-from typing import Union, Set, Dict, Any, Callable, Optional
+from typing import Union, Set, Dict, Any, Callable, Optional, List
 from glob import glob
 
 
@@ -16,6 +16,7 @@ class TaggedImages(Dataset):
         file2tags: Dict[str, Set[int]],
         num_tags: int,
         transform: Optional[Callable[[Image], Any]] = None,
+        pos_weight: Optional[List[float]] = None,
     ):
         super().__init__()
         self.image_folder = image_folder
@@ -30,6 +31,10 @@ class TaggedImages(Dataset):
             ]
         )
         self.num_tags = num_tags
+        if pos_weight is not None:
+            self.pos_weight = torch.FloatTensor(pos_weight)
+        else:
+            self.pos_weight = None
 
     def __len__(self):
         return len(self.images)
@@ -44,11 +49,11 @@ class TaggedImages(Dataset):
 
         # sample tags
         tag_indices = self.file2tags[path]
-        ys = torch.zeros((self.num_tags, ), dtype=torch.float32)
+        ys = torch.zeros((self.num_tags,), dtype=torch.float32)
         for tag_idx in tag_indices:
             ys[tag_idx] = 1.0
 
-        return (
-            image,
-            ys,
-        )
+        if self.pos_weight is not None:
+            return image, ys, self.pos_weight
+        else:
+            return image, ys

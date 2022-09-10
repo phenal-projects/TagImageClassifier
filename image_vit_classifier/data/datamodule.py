@@ -1,6 +1,7 @@
 import os
 from glob import glob
 from typing import Callable, Optional, Union
+from collections import Counter
 
 import pandas as pd
 from .datasets import TaggedImages
@@ -64,11 +65,41 @@ class TaggedImageFolderDataModule(LightningDataModule):
         val_set = set(val_set)
         test_set = set(test_set)
 
-        self.tag2idx = {tag: idx for idx, tag in enumerate(sorted(df.tags.explode().unique()))}
+        self.tag2idx = {
+            tag: idx for idx, tag in enumerate(
+                sorted([x for x in df.tags.explode().unique() if x
+                not in {
+                    "root",
+                    "appearance",
+                    "actors",
+                    "actions",
+                    "body",
+                    "image_description",
+                    "uncategorized_tags",
+                }])
+            )
+        }
+        pos_freq = df.tags.explode().map(self.tag2idx).value_counts()
+        self.pos_weights = [
+            len(df)/pos_freq[i] - 1 for i in range(len(self.tag2idx))
+        ]
 
         df.index = df.filename
         self.file2tags = {
-            path: [self.tag2idx[tag] for tag in tags]
+            path: [
+                self.tag2idx[tag]
+                for tag in tags
+                if tag
+                not in {
+                    "root",
+                    "appearance",
+                    "actors",
+                    "actions",
+                    "body",
+                    "image_description",
+                    "uncategorized_tags",
+                }
+            ]
             for path, tags in zip(
                 image_paths,
                 df.loc[
@@ -83,18 +114,21 @@ class TaggedImageFolderDataModule(LightningDataModule):
             {k: v for k, v in self.file2tags.items() if k in train_set},
             len(self.tag2idx),
             self.hparams.train_image_transform,
+            self.pos_weights
         )
         self.val_dataset = TaggedImages(
             self.hparams.image_folder,
             {k: v for k, v in self.file2tags.items() if k in val_set},
             len(self.tag2idx),
             self.hparams.val_image_transform,
+            self.pos_weights
         )
         self.test_dataset = TaggedImages(
             self.hparams.image_folder,
             {k: v for k, v in self.file2tags.items() if k in test_set},
             len(self.tag2idx),
             self.hparams.val_image_transform,
+            self.pos_weights
         )
 
     def train_dataloader(self) -> DataLoader:

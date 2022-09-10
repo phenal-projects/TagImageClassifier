@@ -29,14 +29,7 @@ def main(cfg: DictConfig) -> None:
                 ],
                 p=0.8,
             ),
-            transforms.RandomGrayscale(p=0.5),
             transforms.RandomInvert(p=0.5),
-            transforms.RandomApply(
-                [
-                    transforms.GaussianBlur(kernel_size=7),
-                ],
-                p=0.3,
-            ),
             transforms.ToTensor(),
             transforms.Normalize(
                 mean=[
@@ -76,15 +69,9 @@ def main(cfg: DictConfig) -> None:
     data.setup()
     # initialize the model
     model = ImageClassifier(
-        image_size=cfg["data"]["image_size"],
-        patch_size=cfg["model"]["patch_size"],
+        model_name=cfg["model"]["model_name"],
         num_classes=len(data.tag2idx),
-        dim=cfg["model"]["emb_size"],
-        depth=cfg["model"]["depth"],
-        heads=cfg["model"]["heads"],
-        mlp_dim=cfg["model"]["mlp_dim"],
         dropout=cfg["model"]["dropout"],
-        emb_dropout=cfg["model"]["dropout"],
         weight_decay=cfg["model"]["weight_decay"],
         learning_rate=cfg["model"]["learning_rate"],
         adam_epsilon=1e-8,
@@ -92,25 +79,59 @@ def main(cfg: DictConfig) -> None:
         max_epochs=cfg["training"]["max_epochs"],
     )
 
+    logger = (WandbLogger(project="ViTClfR34_timm", log_model="all"),)
+
+    pretrainer = pl.Trainer(
+        default_root_dir=cfg["training"]["checkpoints_folder"],
+        gpus=cfg["training"]["gpus"],
+        amp_backend="apex",
+        amp_level="O2",
+        max_epochs=1,
+        limit_train_batches=200,
+        limit_val_batches=100,
+        callbacks=[
+            ModelCheckpoint(
+                save_weights_only=True,
+                mode="min",
+                monitor="val_loss_epoch",
+                save_top_k=2,
+                save_last=True,
+            ),
+            LearningRateMonitor("epoch"),
+        ],
+        logger=logger,
+        gradient_clip_val=1.0,
+    )
+    pretrainer.logger.log_text(
+        key="tag2idx",
+        dataframe=pd.DataFrame.from_dict({"idx": data.tag2idx}).reset_index(),
+    )
+    model.hparams.learning_rate = 0.001
+    model.freeze_pretrained()
+    pretrainer.fit(model, datamodule=data)
+
     trainer = pl.Trainer(
         default_root_dir=cfg["training"]["checkpoints_folder"],
         gpus=cfg["training"]["gpus"],
         max_epochs=cfg["training"]["max_epochs"],
+        amp_backend="apex",
+        amp_level="O2",
         callbacks=[
             ModelCheckpoint(
                 save_weights_only=True,
-                mode="max",
-                monitor="val_roc_auc",
-                save_top_k=4,
+                mode="min",
+                monitor="val_loss_epoch",
+                save_top_k=2,
+                save_last=True,
             ),
             LearningRateMonitor("epoch"),
         ],
-        logger=WandbLogger(project="ViTClfR34", log_model="all"),
+        logger=logger,
     )
+    model.hparams.learning_rate = cfg["model"]["learning_rate"]
+    model.unfreeze_all()
 
-    trainer.logger.log_text(
-        key="tag2idx", dataframe=pd.DataFrame.from_dict({"idx": data.tag2idx}).reset_index()
-    )
+    trainer.logger.watch(model, log_graph=False, log_freq=1000)
     trainer.fit(model, datamodule=data)
 
 
