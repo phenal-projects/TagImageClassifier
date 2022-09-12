@@ -65,6 +65,7 @@ def main(cfg: DictConfig) -> None:
         batch_size=cfg["data"]["batch_size"],
         num_workers=cfg["data"]["num_workers"],
         random_seed=cfg["random_seed"],
+        tag_variance_threshold=cfg["data"]["tag_variance_threshold"]
     )
     data.setup()
     # initialize the model

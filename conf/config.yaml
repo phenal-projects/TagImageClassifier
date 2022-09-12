@@ -5,6 +5,7 @@ data:
   image_size: 224
   batch_size: 32
   num_workers: 12
+  tag_variance_threshold: 0.04
 model:
   model_name: "swsl_resnext50_32x4d"
   dropout: 0.1
